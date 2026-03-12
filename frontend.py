@@ -23,6 +23,8 @@ def api_get(url):
 
 st.title("Adaptive Diagnostic Engine")
 
+# ---------- SESSION INITIALIZATION ----------
+
 if "session_id" not in st.session_state:
 
     session = api_post(f"{API_URL}/start_session")
@@ -35,12 +37,35 @@ if "session_id" not in st.session_state:
     st.session_state.difficulties = []
 
 
+# ---------- SHOW SESSION ID ----------
+
+st.sidebar.header("API Session")
+
+st.sidebar.code(st.session_state.session_id)
+
+st.sidebar.caption("Use this session ID with Postman or curl")
+
+st.sidebar.markdown("Example API calls")
+
+st.sidebar.code(
+f"""GET /next_question/{st.session_state.session_id}
+POST /submit_answer/{st.session_state.session_id}
+GET /study_plan/{st.session_state.session_id}
+""",
+language="bash"
+)
+
+
+# ---------- PROGRESS BAR ----------
+
 answered = st.session_state.q_index
 if st.session_state.feedback:
     answered += 1
 
 st.progress(min(answered / TOTAL_QUESTIONS, 1.0))
 
+
+# ---------- REPORT VIEW ----------
 
 if st.session_state.study_plan:
 
@@ -83,6 +108,9 @@ if st.session_state.study_plan:
     if st.button("Restart Test"):
         st.session_state.clear()
         st.rerun()
+
+
+# ---------- TEST FLOW ----------
 
 else:
 
