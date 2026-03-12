@@ -6,17 +6,16 @@ from bson.objectid import ObjectId
 
 from database import questions_collection, sessions_collection
 
-
-WINDOW = 0.15  # difficulty window around ability
-
-
-def logistic(theta: float, b: float) -> float:
-    return 1 / (1 + np.exp(-(theta - b)))
+WINDOW = 0.15
 
 
-def information(theta: float, b: float) -> float:
-    p = logistic(theta, b)
-    return p * (1 - p)
+def logistic(theta: float, a: float, b: float) -> float:
+    return 1 / (1 + np.exp(-a * (theta - b)))
+
+
+def information(theta: float, a: float, b: float) -> float:
+    p = logistic(theta, a, b)
+    return (a ** 2) * p * (1 - p)
 
 
 def select_next_question(session_id: str) -> Dict[str, Any]:
@@ -38,7 +37,6 @@ def select_next_question(session_id: str) -> Dict[str, Any]:
         })
     )
 
-    # fallback if window empty
     if not questions:
         questions = list(
             questions_collection.find({"_id": {"$nin": asked_ids}})
@@ -50,10 +48,11 @@ def select_next_question(session_id: str) -> Dict[str, Any]:
     scored = []
 
     for q in questions:
+        a = q.get("discrimination", 1.0)
         b = q["difficulty"]
-        info = information(ability, b)
 
-        # slight randomness so sequences aren't identical
+        info = information(ability, a, b)
+
         info += random.uniform(0, 0.02)
 
         scored.append((info, q))
@@ -85,15 +84,16 @@ def update_ability(session_id: str) -> float:
 
     theta = session.get("current_ability", 0.5)
 
+    a = question.get("discrimination", 1.0)
     b = question["difficulty"]
 
-    p = logistic(theta, b)
+    p = logistic(theta, a, b)
 
     r = 1 if last["correct"] else 0
 
     learning_rate = 0.25
 
-    new_theta = theta + learning_rate * (r - p)
+    new_theta = theta + learning_rate * a * (r - p)
 
     new_theta = max(0.0, min(1.0, new_theta))
 
