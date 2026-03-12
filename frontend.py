@@ -1,7 +1,9 @@
 import streamlit as st
 import requests
+import pandas as pd
 
 API_URL = "http://127.0.0.1:8000"
+TOTAL_QUESTIONS = 10
 
 
 def api_post(url, data=None):
@@ -21,11 +23,6 @@ def api_get(url):
 
 st.title("Adaptive Diagnostic Engine")
 
-
-# -----------------------
-# Session Initialization
-# -----------------------
-
 if "session_id" not in st.session_state:
 
     session = api_post(f"{API_URL}/start_session")
@@ -35,65 +32,72 @@ if "session_id" not in st.session_state:
     st.session_state.question = None
     st.session_state.feedback = None
     st.session_state.study_plan = None
+    st.session_state.difficulties = []
 
-
-TOTAL_QUESTIONS = 10
-
-# -----------------------
-# Progress Bar (FIXED)
-# -----------------------
 
 answered = st.session_state.q_index
-
 if st.session_state.feedback:
     answered += 1
 
-progress_value = min(answered / TOTAL_QUESTIONS, 1.0)
+st.progress(min(answered / TOTAL_QUESTIONS, 1.0))
 
-st.progress(progress_value)
-
-
-# -----------------------
-# Result Page
-# -----------------------
 
 if st.session_state.study_plan:
 
-    st.balloons()
-    st.header("Personalized Study Plan")
+    data = st.session_state.study_plan
 
-    st.write(st.session_state.study_plan)
+    st.header("Diagnostic Report")
+
+    st.metric("Final Ability Estimate", f"{data['final_ability']:.2f}")
+    st.metric("Performance Score", f"{data['performance_score']:.2f}")
+
+    st.subheader("Ability Progression")
+
+    ability_history = data["ability_history"]
+
+    ability_df = pd.DataFrame({
+        "Question": list(range(1, len(ability_history) + 1)),
+        "Ability": ability_history
+    }).set_index("Question")
+
+    st.line_chart(ability_df)
+
+    if st.session_state.difficulties:
+
+        chart = pd.DataFrame({
+            "Question": list(range(1, len(st.session_state.difficulties) + 1)),
+            "Ability": ability_history[1:],
+            "Difficulty": st.session_state.difficulties
+        }).set_index("Question")
+
+        st.subheader("Question Difficulty vs Ability")
+
+        st.line_chart(chart)
+
+    st.subheader("Topic Errors")
+    st.write(data["topic_errors"])
+
+    st.subheader("Personalized Study Plan")
+    st.write(data["study_plan"])
 
     if st.button("Restart Test"):
         st.session_state.clear()
         st.rerun()
 
-
-# -----------------------
-# Test Flow
-# -----------------------
-
 else:
 
-    # Load question
     if st.session_state.question is None and st.session_state.q_index < TOTAL_QUESTIONS:
 
         q = api_get(f"{API_URL}/next_question/{st.session_state.session_id}")
 
         if q:
             st.session_state.question = q
-
-        else:
-            plan = api_get(f"{API_URL}/study_plan/{st.session_state.session_id}")
-
-            if plan:
-                st.session_state.study_plan = plan["study_plan"]
-                st.rerun()
-
-    if st.session_state.question is None:
-        st.stop()
+            st.session_state.difficulties.append(q["difficulty"])
 
     q = st.session_state.question
+
+    if q is None:
+        st.stop()
 
     st.subheader(f"Question {st.session_state.q_index + 1}/{TOTAL_QUESTIONS}")
 
@@ -109,10 +113,6 @@ else:
         format_func=lambda x: f"{x}: {q['options'][x]}",
     )
 
-    # -----------------------
-    # Submit Answer
-    # -----------------------
-
     if st.button("Submit Answer") and st.session_state.feedback is None:
 
         result = api_post(
@@ -124,10 +124,6 @@ else:
             st.session_state.feedback = result
             st.rerun()
 
-    # -----------------------
-    # Feedback
-    # -----------------------
-
     if st.session_state.feedback:
 
         if st.session_state.feedback["correct"]:
@@ -137,7 +133,6 @@ else:
 
         st.info(f"Estimated Ability: {st.session_state.feedback['new_ability']:.2f}")
 
-        # Last question
         if st.session_state.q_index == TOTAL_QUESTIONS - 1:
 
             if st.button("Finish Test"):
@@ -147,7 +142,7 @@ else:
                 )
 
                 if plan:
-                    st.session_state.study_plan = plan["study_plan"]
+                    st.session_state.study_plan = plan
                     st.rerun()
 
         else:
